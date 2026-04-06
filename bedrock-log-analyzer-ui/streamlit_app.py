@@ -103,8 +103,11 @@ st.sidebar.subheader("AI Enhancement")
 enable_ai = st.sidebar.checkbox("Enable AI Enhancement", value=True)
 bedrock_model = st.sidebar.selectbox(
     "Bedrock Model",
-    ["us.amazon.nova-micro-v1:0", "claude-3-haiku", "claude-3-sonnet"],
-    help="nova-micro is fastest and cheapest, claude-3-haiku is balanced, claude-3-sonnet is most powerful"
+    [
+        "anthropic.claude-3-haiku-20240307-v1:0", 
+        "anthropic.claude-3-sonnet-20240229-v1:0"
+    ],
+    help="Claude 3 Haiku (Siêu tốc độ, Khuyên dùng) và Claude 3 Sonnet (Cực kỳ thông minh nhưng tốn phí cao hơn)."
 )
 
 # Main content
@@ -173,14 +176,19 @@ if st.sidebar.button("🚀 Analyze Logs", use_container_width=True, type="primar
                             log_examples
                         )
                         
-                        ai_info = AIInfo(
-                            ai_enhancement_used=usage_stats.get("ai_enhancement_used", False),
-                            bedrock_model_used=usage_stats.get("bedrock_model_used"),
-                            total_tokens_used=usage_stats.get("total_tokens_used"),
-                            estimated_total_cost=usage_stats.get("estimated_total_cost"),
-                            api_calls_made=usage_stats.get("api_calls_made")
-                        )
-                        st.success(f"✅ AI enhancement completed (Cost: ${ai_info.estimated_total_cost:.4f})")
+                        if "error" in usage_stats:
+                            st.error(f"❌ {usage_stats['error']}")
+                            st.warning("⚠️ Đã chuyển về chế độ hiển thị Basic Solutions do lỗi Bedrock.")
+                            ai_info = AIInfo(ai_enhancement_used=False)
+                        else:
+                            ai_info = AIInfo(
+                                ai_enhancement_used=usage_stats.get("ai_enhancement_used", False),
+                                bedrock_model_used=usage_stats.get("bedrock_model_used"),
+                                total_tokens_used=usage_stats.get("total_tokens_used"),
+                                estimated_total_cost=usage_stats.get("estimated_total_cost"),
+                                api_calls_made=usage_stats.get("api_calls_made")
+                            )
+                            st.success(f"✅ AI enhancement completed (Cost: ${ai_info.estimated_total_cost:.4f})")
                     else:
                         st.warning("⚠️ AWS Bedrock not available, using basic solutions")
                         ai_info = AIInfo(ai_enhancement_used=False)
@@ -244,6 +252,26 @@ else:
         
         st.divider()
         
+        # Component Error Summary Table
+        st.subheader("🎯 Component Error Summary")
+        if result.analysis.components:
+            total_errors = sum(result.analysis.components.values())
+            table_data = []
+            for comp, count in result.analysis.components.items():
+                ratio = f"{(count / total_errors) * 100:.1f}%" if total_errors > 0 else "0%"
+                table_data.append({
+                    "Nguồn Log (Component)": comp,
+                    "Số lượng Lỗi": count,
+                    "Tỉ trọng (%)": ratio
+                })
+            
+            # Remove index when rendering the dataframe to make it cleaner
+            st.dataframe(table_data, use_container_width=True, hide_index=True)
+        else:
+            st.info("Chưa có dữ liệu Component nào được tìm thấy.")
+            
+        st.divider()
+        
         # Export results
         st.subheader("📥 Export Results")
         col1, col2 = st.columns(2)
@@ -261,7 +289,9 @@ else:
             # CSV export
             csv_data = "Problem,Issue Type,Components,AI Enhanced,Solution\n"
             for sol in result.solutions:
-                csv_data += f'"{sol.problem}","{sol.issue_type.value}","{", ".join(sol.affected_components)}",{sol.ai_enhanced},"{sol.solution[:100]}..."\n'
+                # Ép kiểu an toàn vì Bedrock thỉnh thoảng trả về dict/json object
+                safe_solution = str(sol.solution).replace('"', '""')
+                csv_data += f'"{sol.problem}","{sol.issue_type.value}","{", ".join(sol.affected_components)}",{sol.ai_enhanced},"{safe_solution[:100]}..."\n'
             
             st.download_button(
                 label="📊 Download CSV",

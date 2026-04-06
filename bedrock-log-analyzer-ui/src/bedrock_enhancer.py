@@ -71,8 +71,11 @@ class BedrockEnhancer:
                 api_calls += 1
             except Exception as e:
                 print(f"Error enhancing batch: {e}")
-                # Use original solutions if enhancement fails
-                enhanced_solutions.extend(batch)
+                # Truyền thẳng lỗi cho UI hiển thị thay vì âm thầm trả Basic Solutions
+                return solutions, {
+                    "ai_enhancement_used": False,
+                    "error": f"Bedrock API Failed: {str(e)}"
+                }
         
         usage_stats = {
             "ai_enhancement_used": True,
