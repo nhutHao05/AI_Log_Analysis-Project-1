@@ -69,10 +69,10 @@ aws_profile = st.sidebar.text_input("AWS Profile", value="default")
 
 # CloudWatch Configuration
 st.sidebar.subheader("CloudWatch Settings")
-log_group = st.sidebar.text_input(
-    "Log Group Name",
-    value="/aws/lambda/my-function",
-    help="e.g., /aws/lambda/my-function or /aws/ecs/my-service"
+log_groups_str = st.sidebar.text_area(
+    "Log Groups (1 group/dòng hoặc cách nhau bằng dấu phẩy)",
+    value="/aws/vpc/flowlogs\n/aws/cloudtrail/logs\n/aws/ec2/applogs",
+    help="Đa luồng chống nghẽn nghẽn. Ví dụ: /aws/vpc/flowlogs, /aws/ec2/applogs"
 )
 
 # Time range
@@ -127,19 +127,37 @@ if st.sidebar.button("🚀 Analyze Logs", use_container_width=True, type="primar
             start_time = datetime.now() - timedelta(hours=hours_back)
             end_time = datetime.now()
             
-            raw_logs = cw_client.get_logs(
-                log_group=log_group,
-                start_time=start_time,
-                end_time=end_time,
-                search_term=search_term,
-                max_matches=max_matches
-            )
+            # Tách mảng Log Groups từ giao diện 
+            log_groups = [g.strip() for g in log_groups_str.replace('\n', ',').split(',')] if log_groups_str else []
+            raw_logs = []
+            
+            progress_text = "Đang hút Log từ Mây về..."
+            my_bar = st.progress(0, text=progress_text)
+            
+            for index, group in enumerate(log_groups):
+                if not group: continue
+                # Update progress bar
+                my_bar.progress((index + 1) / len(log_groups), text=f"Đang phân tích kho: {group}")
+                
+                try:
+                    group_logs = cw_client.get_logs(
+                        log_group=group,
+                        start_time=start_time,
+                        end_time=end_time,
+                        search_term=search_term if search_term else None,
+                        max_matches=max_matches // len(log_groups) if len(log_groups) > 0 else max_matches
+                    )
+                    raw_logs.extend(group_logs)
+                except Exception as e:
+                    st.warning(f"⚠️ Could not pull logs from {group}: {e}")
+                    
+            my_bar.empty()
             
             if not raw_logs:
-                st.warning("⚠️ No logs found matching your criteria")
+                st.warning("⚠️ No logs found matching your criteria across all groups")
                 st.session_state.is_analyzing = False
             else:
-                st.success(f"✅ Found {len(raw_logs)} matching logs")
+                st.success(f"✅ Found {len(raw_logs)} matching logs across {len(log_groups)} kho dữ liệu")
                 
                 # Step 2: Parse logs
                 st.info("🔍 Parsing logs...")
@@ -199,8 +217,8 @@ if st.sidebar.button("🚀 Analyze Logs", use_container_width=True, type="primar
                 metadata = Metadata(
                     timestamp=datetime.now().isoformat(),
                     search_term=search_term,
-                    log_directory=log_group,
-                    total_files_searched=1,
+                    log_directory=log_groups_str.replace('\n', ', '),
+                    total_files_searched=len(log_groups),
                     total_matches=len(matches)
                 )
                 
